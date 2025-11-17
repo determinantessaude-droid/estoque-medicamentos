@@ -220,12 +220,27 @@ const App: React.FC = () => {
             return diffDays >= 0 && diffDays <= 90;
         }).length;
 
+        const expiredCount = medications.filter(med => {
+            if (!med.expirationDate) return false;
+
+            const dateParts = med.expirationDate.split('-');
+            if (dateParts.length !== 3) return false;
+
+            const [year, month, day] = dateParts.map(Number);
+            const expDate = new Date(Date.UTC(year, month - 1, day));
+
+            const diffTime = expDate.getTime() - today.getTime();
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            return diffDays < 0;
+        }).length;
+
         const lowStockCount = medications.filter(med => med.quantity <= 10).length;
 
         return {
             total: medications.length,
             expiringSoon: expiringSoonCount,
             lowStock: lowStockCount,
+            expired: expiredCount,
         };
     }, [medications]);
 
@@ -323,10 +338,14 @@ const App: React.FC = () => {
             </header>
 
             <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
                     <div className="bg-white p-5 rounded-lg shadow">
                         <h3 className="text-sm font-medium text-gray-500">Total de Itens</h3>
                         <p className="mt-1 text-3xl font-semibold text-teal-600">{summaryData.total}</p>
+                    </div>
+                    <div className="bg-white p-5 rounded-lg shadow">
+                        <h3 className="text-sm font-medium text-gray-500">Vencidos</h3>
+                        <p className="mt-1 text-3xl font-semibold text-red-600">{summaryData.expired}</p>
                     </div>
                     <div className="bg-white p-5 rounded-lg shadow">
                         <h3 className="text-sm font-medium text-gray-500">Vencendo em 90 Dias</h3>
