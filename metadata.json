@@ -1,0 +1,5 @@
+{
+  "name": "Gestor de Estoque de Medicamentos",
+  "description": "Um aplicativo para auxiliar no controle de estoque de medicamentos, permitindo o gerenciamento por classe, validade, mecanismo de ação e código de barras, com entrada de dados por foto, manual ou código de barras.",
+  "requestFramePermissions": []
+}
