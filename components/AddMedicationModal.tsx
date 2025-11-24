@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, ChangeEvent, FormEvent, useEffect } from 'react';
 import { Medication } from '../types';
 import { extractMedicationInfoFromFile, extractMedicationInfoFromText, suggestPmc, suggestMedicationDetails, generateMechanismOfAction, suggestMedicationClass } from '../services/geminiService';
@@ -38,7 +39,6 @@ export const AddMedicationModal: React.FC<AddMedicationModalProps> = ({ isOpen, 
   const [isSuggestingClass, setIsSuggestingClass] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [isCameraPermissionModalOpen, setIsCameraPermissionModalOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -80,7 +80,6 @@ export const AddMedicationModal: React.FC<AddMedicationModalProps> = ({ isOpen, 
       setIsSuggestingDetails(false);
       setIsGeneratingMoA(false);
       setIsSuggestingClass(false);
-      setIsCameraPermissionModalOpen(false);
     }
   }, [isOpen, isEditMode, medicationToEdit]);
 
@@ -169,26 +168,8 @@ export const AddMedicationModal: React.FC<AddMedicationModalProps> = ({ isOpen, 
   };
   
   const handleTabClick = (mode: InputMode) => {
-    if (mode === 'camera') {
-      setIsCameraPermissionModalOpen(true);
-    } else {
-      setError(null);
-      setInputMode(mode);
-    }
-  };
-
-  const handleCameraPermissionRequest = async () => {
-    try {
-      // @ts-ignore - aistudio is a global provided by the platform
-      await window.aistudio.requestFramePermissions(['camera']);
-      setError(null);
-      setInputMode('camera');
-    } catch (err) {
-      setError('A permissão da câmera foi negada. Você pode precisar habilitá-la nas configurações do seu navegador.');
-      console.error('Camera permission denied:', err);
-    } finally {
-      setIsCameraPermissionModalOpen(false);
-    }
+    setError(null);
+    setInputMode(mode);
   };
 
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -198,6 +179,41 @@ export const AddMedicationModal: React.FC<AddMedicationModalProps> = ({ isOpen, 
     setIsProcessing(true);
     setError(null);
     setImagePreview(null);
+
+    // Special handling for JSON backup files
+    if (file.type === 'application/json' || file.name.toLowerCase().endsWith('.json')) {
+        try {
+            const text = await file.text();
+            const json = JSON.parse(text);
+            // Handle both straight array and { medications: [...] } format
+            const meds = Array.isArray(json) ? json : (json.medications || []);
+            
+            if (meds && meds.length > 0) {
+                meds.forEach((med: any) => {
+                    const medicationWithDefaults = {
+                        ...initialFormState,
+                        ...med,
+                        quantity: typeof med.quantity === 'number' ? med.quantity : 1,
+                        pmc: typeof med.pmc === 'number' ? med.pmc : 0,
+                    };
+                    // Ensure we don't overwrite ID if it exists in backup (or maybe we should generate new IDs?)
+                    // Generating new IDs avoids conflicts if importing into existing DB
+                    const { id, ...dataWithoutId } = medicationWithDefaults; 
+                    onSave(dataWithoutId);
+                });
+                onClose();
+            } else {
+                setError("Arquivo JSON inválido ou sem medicamentos encontrados.");
+                setInputMode('manual');
+            }
+        } catch (err) {
+             console.error("Error reading JSON:", err);
+             setError("Erro ao processar arquivo de backup.");
+        } finally {
+            setIsProcessing(false);
+        }
+        return;
+    }
 
     try {
         let extractedData: Partial<Medication>[];
@@ -223,7 +239,7 @@ export const AddMedicationModal: React.FC<AddMedicationModalProps> = ({ isOpen, 
             const textContent = await file.text();
             extractedData = await extractMedicationInfoFromText(textContent);
         } else {
-            throw new Error('Tipo de arquivo não suportado. Por favor, use um arquivo de imagem, PDF ou .txt.');
+            throw new Error('Tipo de arquivo não suportado. Por favor, use um arquivo de imagem, PDF, .txt ou .json.');
         }
         
         if (extractedData && extractedData.length > 0) {
@@ -357,15 +373,15 @@ export const AddMedicationModal: React.FC<AddMedicationModalProps> = ({ isOpen, 
                   <div className="text-center p-6 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50">
                       <FileUploadIcon className="mx-auto h-12 w-12 text-gray-400" />
                       <h3 className="mt-2 text-sm font-medium text-gray-900">
-                          {isProcessing ? 'Processando Arquivo...' : 'Carregar Imagem, PDF ou Texto'}
+                          {isProcessing ? 'Processando Arquivo...' : 'Carregar Imagem, PDF, Texto ou Backup'}
                       </h3>
                       <p className="mt-1 text-sm text-gray-500">
-                        Use uma receita em PDF, uma imagem ou um arquivo de texto (.txt).
+                        Use uma receita (PDF/Img), texto (.txt) ou backup (.json).
                       </p>
                       <div className="mt-4">
                           <input
                               type="file"
-                              accept="image/*,application/pdf,.txt"
+                              accept="image/*,application/pdf,.txt,.json"
                               onChange={handleFileChange}
                               className="sr-only"
                               id="doc-upload"
@@ -386,10 +402,10 @@ export const AddMedicationModal: React.FC<AddMedicationModalProps> = ({ isOpen, 
                    <div className="text-center p-6 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50">
                       <CameraIcon className="mx-auto h-12 w-12 text-gray-400" />
                       <h3 className="mt-2 text-sm font-medium text-gray-900">
-                          {isProcessing ? 'Processando Imagem...' : 'Escanear Embalagem'}
+                          {isProcessing ? 'Processando Imagem...' : 'Foto da Embalagem'}
                       </h3>
                       <p className="mt-1 text-sm text-gray-500">
-                        Use a câmera para tirar uma foto da embalagem do medicamento.
+                        Tire uma foto ou envie uma imagem da embalagem do medicamento.
                       </p>
                       <div className="mt-4">
                           <input
@@ -582,43 +598,6 @@ export const AddMedicationModal: React.FC<AddMedicationModalProps> = ({ isOpen, 
           </form>
         </div>
       </div>
-      {isCameraPermissionModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-60">
-          <div className="bg-white rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl animate-scale-in">
-              <div className="sm:flex sm:items-start">
-                  <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-teal-100 sm:mx-0 sm:h-10 sm:w-10">
-                      <CameraIcon className="h-6 w-6 text-teal-600" aria-hidden="true" />
-                  </div>
-                  <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
-                      <h3 className="text-lg leading-6 font-medium text-gray-900">
-                          Permissão da Câmera
-                      </h3>
-                      <div className="mt-2">
-                          <p className="text-sm text-gray-500">
-                              Para escanear a embalagem do medicamento, precisamos de acesso à sua câmera. Sua imagem não será armazenada.
-                          </p>
-                      </div>
-                  </div>
-              </div>
-              <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
-                  <button
-                      type="button"
-                      onClick={handleCameraPermissionRequest}
-                      className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-teal-600 text-base font-medium text-white hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 sm:ml-3 sm:w-auto sm:text-sm"
-                  >
-                      Permitir
-                  </button>
-                  <button
-                      type="button"
-                      onClick={() => setIsCameraPermissionModalOpen(false)}
-                      className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 sm:mt-0 sm:w-auto sm:text-sm"
-                  >
-                      Cancelar
-                  </button>
-              </div>
-          </div>
-        </div>
-      )}
     </>
   );
 };

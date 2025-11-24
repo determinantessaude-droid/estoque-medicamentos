@@ -120,6 +120,29 @@ export const generateInventoryReport = async (inventory: Medication[], selectedC
         return "O inventário está vazio. Nenhum relatório a ser gerado.";
     }
 
+    // Pre-calculate status to ensure consistency with UI
+    const today_local = new Date();
+    const today = new Date(Date.UTC(today_local.getFullYear(), today_local.getMonth(), today_local.getDate()));
+
+    const inventoryWithStatus = inventory.map(item => {
+        let status = "N/A";
+        if (item.expirationDate) {
+            const dateParts = item.expirationDate.split('-');
+            if (dateParts.length === 3) {
+                const [year, month, day] = dateParts.map(Number);
+                const expiration = new Date(Date.UTC(year, month - 1, day));
+                const diffTime = expiration.getTime() - today.getTime();
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                if (diffDays < 0) status = "Vencido";
+                else if (diffDays <= 30) status = "Vence < 30d";
+                else if (diffDays <= 90) status = "Vence < 90d";
+                else status = "OK";
+            }
+        }
+        return { ...item, status };
+    });
+
     const columnLabels: { [key: string]: string } = {
         name: 'Nome do Medicamento',
         activeIngredient: 'Princípio Ativo',
@@ -147,12 +170,12 @@ export const generateInventoryReport = async (inventory: Medication[], selectedC
         Regras para colunas especiais:
         - Para a coluna "Data de Validade", use o formato DD/MM/YYYY. Se a data não existir, use "-".
         - Para a coluna "PMC (R$)", formate os valores como moeda brasileira (ex: R$ 12,34). Se o valor for 0 ou não existir, use "-".
-        - Para a coluna "Status de Vencimento", calcule o status com base na data de validade e a data de hoje. Use as seguintes categorias: "Vencido", "Vence < 30d", "Vence < 90d", "OK". Se não houver data de validade, use "N/A".
+        - Para a coluna "Status de Vencimento", use EXATAMENTE o valor do campo "status" presente no JSON. Não recalcule.
         
         Ordene a tabela pela data de validade, dos mais próximos de vencer para os mais distantes. Medicamentos sem data de validade devem ficar no final.
 
         Dados do Inventário:
-        ${JSON.stringify(inventory, null, 2)}
+        ${JSON.stringify(inventoryWithStatus, null, 2)}
     `;
 
     try {
